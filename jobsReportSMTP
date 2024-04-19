@@ -1,0 +1,125 @@
+# Import the necessary libraries
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+
+# Set up the SMTP server
+smtp_server = 'smtp.office365.com'
+smtp_port = 587
+
+# Sender email credentials
+sender_email = # 'senderOutlook'
+sender_password = # 'sederPW'
+
+
+# Collect the distinct emails and companies from the test_salesforce table
+emails = spark.sql("SELECT DISTINCT Email FROM -------")
+
+
+# Loop over each distinct client team email from the salesforce table [emails], create a dataframe that joins the assigned companies
+    # And email a report based off of the coresignal
+
+
+for row in emails.collect():
+    email = row.Email    # Accessing the 'Email' column from the row
+    
+    result = spark.sql("""
+                       SELECT 
+                            --c.Name AS Name,
+                            --c.email AS Email,
+                            DISTINCT
+                            j.companyName AS Company, 
+                            j.jobTitle AS Title,
+                            j.country AS Country,
+                            j.city AS City,
+                            j.linkedinJobPostUrl AS URL
+                            FROM ------- AS j
+                            JOIN ------- AS c
+                            ON lower(j.companyName) = lower(c.Company)
+                            AND c.Email = '{}'
+                       """.format(email))
+    
+    # Convert result to DataFrame
+    df = result.toPandas()
+
+    # Create a URL converter
+    def make_clickable(url):
+        return f'<a href="{url}">{url}</a>'
+    
+    # Convert pandas DataFrame to HTML
+    df['URL'] = df['URL'].apply(lambda url: f'<a href="{url}">{url}</a>')
+
+
+    # Create the HTML content
+    name = spark.sql("""
+                       SELECT DISTINCT(Name) FROM -------
+                            WHERE Email LIKE '{}'
+                       """.format(email)).collect()[0].Name
+
+    table_html = df.to_html(index=False, escape=False)
+
+    # Create the formatted data HTML
+    data = ''
+    current_company = None
+    current_country = None
+
+    # Sort dataframe by Company and Country
+    df = df.sort_values(by=['Company', 'Country'])
+
+    # Separate rows by company and country
+    for index, row in df.iterrows():
+        if current_company != row['Company']:
+            if current_company is not None:
+                data += '<br>'
+            data += f"<b>{row['Company']}</b><br>"
+            current_company = row['Company']
+            if current_country == row['Country']:
+                data += '<br>'
+                data += f"<i>{row['Country']}</i><br><br>"
+        if current_country != row['Country']:
+            data += '<br>'
+            data += f"<i>{row['Country']}</i><br><br>"
+            current_country = row['Country']
+        data += f"{row['Title']} - {row['City']} - {row['URL']}<br>"
+
+
+
+    body = f"""
+                <html>
+                <body>
+                <p> Hi {name}, <br>
+
+                    <br>
+                    Happy Friday!
+                    <br>
+                    Here is the list of Jobs that have been posted this week for the companies you’re overlooking: 
+                </p>
+                <p>
+                    {data}
+                </p>
+                </body>
+                </html>
+                """
+
+
+    
+
+    # Recipient email
+    recipient_email = email
+
+    # Create a message with MIMEMultipart
+    message = MIMEMultipart()
+    message['From'] = sender_email
+    message['To'] = recipient_email
+    message['Subject'] = 'Databricks Report'
+
+    # Convert the body to HTML format
+    body_html = MIMEText(body.format(name=name, data=data), 'html')
+    message.attach(body_html)
+
+    # Connect to Outlook's SMTP server
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, recipient_email, message.as_string())
