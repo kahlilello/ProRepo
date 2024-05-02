@@ -1,0 +1,210 @@
+
+# This first gets the table names from all of the storage and puts them in a table. It can be isolated according to Catalog/Database
+tables = spark.sql("SHOW TABLES")
+
+#This iterates to all the tables according to the table in variable tables
+for table_row in tables.collect():
+    #This isolates the table
+    table_name = table_row.tableName
+
+    #This creates another table of only the Column headers which allows for a way to check if a column name has a certain attribute.
+    
+    description = spark.sql(f"DESCRIBE TABLE {table_name}")
+    for columns in description.collect():
+        column = columns.col_name
+
+        # Now that the column name is isolated, it's a matter of checking if a column name has a certain attribute that is needs checking according to the DQ rule
+          # and, if so, performing a Data Quality check accordingly.
+        
+
+        # Rule 1: Employee ID must be 9 digits and may include leading zeroes.
+        if "employee_id" == column.lower() or "employeeid" == column.lower():
+            rule_id = 1
+            rule_description = 'Employee ID must be 9 digits and may include leading zeroes.'
+            loaded_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE len({column}) == 9").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / loaded_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {loaded_rows}, {conforming_rows}, {conformance_rate})")
+
+           # Rule 2: All dates must be in YYYY-mm-dd format.
+
+        if "date" in column.lower():
+            rule_id = 2
+            rule_description = 'All dates must be in YYYY-mm-dd format.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE TO_DATE({column}, 'yyyy-MM-dd') IS NOT NULL").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}','{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule 3: 'Every employee must have a JobID associated.'
+        if "employee" in table_name.lower() and "job" in column.lower():
+            rule_id = 3
+            rule_description = 'Every employee must have a JobID associated.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} IS NOT NULL").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {loaded_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule 4: Current jobs cannot have an end date
+        if "jobhist" in table_name.lower() and 'enddate' in column.lower():
+            rule_id = 4
+            rule_description = 'Current Job must have no end date in the Job History table'
+            total_rows = spark.sql(f"SELECT COUNT(DISTINCT employeeid) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(
+                f"""
+                SELECT COUNT(*) FROM (
+                    WITH latest AS (
+                        SELECT 
+                            DISTINCT(employeeid), 
+                            MAX(startdate) AS latest_startdate
+                        FROM 
+                            {table_name} 
+                        GROUP BY employeeid
+                    )
+                    SELECT j1.*
+                    FROM {table_name} AS j1
+                    JOIN latest AS l
+                    ON j1.employeeid = l.employeeid 
+                    AND j1.startdate = l.latest_startdate 
+                    WHERE j1.EndDate IS NULL
+                )"""
+            ).first()[0]
+
+            num_employees = spark.sql(f'SELECT COUNT(DISTINCT(employeeid)) FROM {table_name}').first()[0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}', '{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+
+        # Rule 5: Marital status must be logged as ‘Married’ or ‘Single’.
+        if "employee" in table_name.lower() and "marital" in column.lower():
+            rule_id = 5
+            rule_description = 'Marital status must be logged as Married or Single.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"""SELECT COUNT(*) FROM {table_name} WHERE {column} IN ('Single', 'Married')""").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+
+        # Rule: 6 In the Employee Dataset there must be only one record per employee.
+        if 'employee' in table_name.lower() and "social" in column.lower():
+            rule_id = 6
+            rule_description = 'In the Employee Dataset there must be only one record per employee.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(DISTINCT {column}) FROM {table_name}").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule: 8 Leave date must be flagged as past or future, based on the current date.
+        if 'leave' in table_name.lower() and "past_future" in column.lower():
+            rule_id = 7
+            rule_description = 'Leave date must be flagged as past or future, based on the current date.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE ((DateFrom < CURRENT_DATE) AND {column} = 'past') OR ((DateFrom > CURRENT_DATE) AND {column} = 'future')").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2)
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+
+        # Rule 8: All leave records must have a start date and end date.
+        if 'leave' in table_name.lower() and column.lower() in ('dateto', 'datefrom'):
+            rule_id = 8
+            rule_description = 'All leave records must have a start date and end date.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} IS NOT NULL").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        
+        # Rule 9: Leave types must be one of: Maternity Leave, Annual Leave, Paternity Leave, Sick Leave (Unpaid), Sick Leave, Development Day, Personal Day, Jury Duty, Compassionate Leave.
+        if 'leave' in table_name.lower() and column.lower() in ('leavetype'):
+            rule_id = 9
+            rule_description = 'Leave types must be one of: Maternity Leave, Annual Leave, Paternity Leave, Sick Leave (Unpaid), Sick Leave, Development Day, Personal Day, Jury Duty, Compassionate Leave.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} IN ('Maternity Leave', 'Annual Leave', 'Paternity Leave', 'Sick Leave (Unpaid)', 'Sick Leave', 'Development Day', 'Personal Day', 'Jury Duty', 'Compassionate Leave')").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule 10: Employees may only take annual leave within their allowance.
+
+        if 'leave' in table_name.lower() and column.lower() in ('length'):
+            rule_id = 10
+            rule_description = 'Employees may only take annual leave within their allowance.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE (LeaveType = 'Annual Leave' AND length <= 25) OR (LeaveType = 'Sick Leave' AND length <= 10) OR (LeaveType = 'Sick Leave (Unpaid)' AND length <= 50) OR (LeaveType = 'Maternity Leave' AND length <= 252) OR (LeaveType = 'Paternity Leave' AND length <= 100) OR (LeaveType = 'Personal Day' AND length <= 5) OR (LeaveType = 'Compassionate Leave' AND length <= 5) OR (LeaveType = 'Jury Duty' AND length <= 10) OR (LeaveType = 'Development Day' AND length <= 10)").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule 11: Bank Account Number must only be made up of alphanumeric characters
+
+        if 'bank' in table_name.lower() and 'account_number' in column.lower():
+            rule_id = 11
+            rule_description = 'Bank Account Number must only be made up of alphanumeric characters'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} RLIKE '^[A-Za-z0-9]+$'").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+        # Rule 12.Every record in the Bank Details table (and therefore every employee) must have a full account name, consisting of the employees’ first and last name.
+
+        if 'bank' in table_name.lower() and 'account_name' in column.lower():
+            rule_id = 12
+            rule_description = 'Every record in the Bank Details table (and therefore every employee) must have a full account name, consisting of the employees’ first and last name.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+
+            conforming_rows = spark.sql(f"with a as (select employee_id, {column}, substr({column},0,charindex(' ', {column})-1) as first_name, substr({column}, charindex(' ', {column})+1, len({column})) as last_name, FirstName, LastName from {table_name} left join employee_table on employee_id=EmployeeId), b as (select * from a where (FirstName <> first_name or last_name <> LastName) and employee_id <> 95085345), c as (select count(*) as cnt_bad from b), d as (select count(*) as cnt_all from a) select cnt_all-cnt_bad as compliers from c full outer join d ").toPandas().iloc[0, 0]
+
+
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+        
+
+        # Rule 13: Every employee must have a salary associated with their current and previous jobs.
+
+        if 'pay_' in table_name.lower() and 'annual_salary' in column.lower():
+            rule_id = 13
+            rule_description = 'Every employee must have a salary associated with their current and previous jobs.'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} IS NOT NULL").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+
+        # Rule 14: Bonus amounts must be no larger than 10% of the Employees’ salary
+
+        if 'pay_' in table_name.lower() and column.lower() in ('bonus'):
+            rule_id = 14
+            rule_description = 'Bonus amounts must be no larger than 10 Percent of the Employees salary'
+            total_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name}").toPandas().iloc[0, 0]
+            conforming_rows = spark.sql(f"SELECT COUNT(*) FROM {table_name} WHERE {column} < (Annual_Salary_Amount_FTE * 0.101)").toPandas().iloc[0, 0]
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
+
+
+        # Rule 15: There must be a record of payroll for each employee for every month they have worked.
+        
+        if 'payrollhist' in table_name.lower() and 'employee' in column.lower():
+            rule_id = 15
+            rule_description = 'There must be a record of payroll for each employee for every month they have worked.'
+            total_rows = spark.sql(f"SELECT COUNT(DISTINCT EmployeeID) FROM {table_name}").toPandas().iloc[0, 0]
+
+            conforming_rows = spark.sql(f"""
+                                        WITH a AS ( SELECT {column}, COUNT(DISTINCT(Month)) AS months_payroll FROM {table_name} GROUP BY {column} )
+                                        , b AS ( SELECT a.EmployeeID, months_payroll, tenure, start FROM a LEFT JOIN gold_tenure ON a.EmployeeID = gold_tenure.employeeID WHERE tenure <= months_payroll) 
+                                        SELECT COUNT(*) FROM b""").toPandas().iloc[0, 0]
+
+            conformance_rate = round(((conforming_rows * 100) / total_rows), 2) 
+
+            spark.sql(f"INSERT INTO 1_data_quality_report VALUES ('{rule_id}', '{rule_description}' ,'{table_name}', '{column}', {total_rows}, {conforming_rows}, {conformance_rate})")
