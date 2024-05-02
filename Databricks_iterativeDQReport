@@ -1,6 +1,7 @@
 
 # This was done in APR2024 meant to create a Data Quality Report based on business rules.
     # The code iterates through the table names and columns. 
+    # If the column name is pertinent to the rule, the column is checked with SQL Query.
 
 # This first gets the table names from all of the storage and puts them in a table. It can be isolated according to Catalog/Database
 tables = spark.sql("SHOW TABLES")
