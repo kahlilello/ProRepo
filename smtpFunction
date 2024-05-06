@@ -1,0 +1,30 @@
+# Import the necessary libraries
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+
+# Set up the SMTP server and credentials
+smtp_server = 'smtp.office365.com'
+smtp_port = 587
+sender_email = '-----'
+sender_password = '-----'
+
+
+
+def send_email(sender_email, sender_password, recipient_email, subject, body):
+    """
+    Sends an email with the provided details.
+    """
+    message = MIMEMultipart()
+    message['From'] = sender_email
+    message['To'] = recipient_email
+    message['Subject'] = subject
+
+    body_html = MIMEText(body, 'html')
+    message.attach(body_html)
+
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, recipient_email, message.as_string())
