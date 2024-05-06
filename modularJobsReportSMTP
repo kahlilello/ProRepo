@@ -43,8 +43,8 @@ def create_email_body(email):
                             j.country AS Country,
                             j.city AS City,
                             j.linkedinJobPostUrl AS URL
-                            FROM goldlayer_coresignal.uk_us_data_jobs_view AS j
-                            JOIN goldlayer_coresignal.test_salesforce AS c
+                            FROM ----- AS j
+                            JOIN ----- AS c
                             ON lower(j.companyName) = lower(c.Company)
                             AND c.Email = '{}'
                        """.format(email))
