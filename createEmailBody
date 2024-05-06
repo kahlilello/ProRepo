@@ -1,0 +1,78 @@
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import pandas as pd
+
+
+def create_email_body(email):
+    """
+    Creates the email body based on the provided email address.
+    """
+    result = spark.sql("""
+                       SELECT 
+                            DISTINCT
+                            j.companyName AS Company, 
+                            j.jobTitle AS Title,
+                            j.country AS Country,
+                            j.city AS City,
+                            j.linkedinJobPostUrl AS URL
+                            FROM ----- AS j
+                            JOIN ----- AS c
+                            ON lower(j.companyName) = lower(c.Company)
+                            AND c.Email = '{}'
+                       """.format(email))
+
+    df = result.toPandas()
+
+    # Create a URL converter
+    def make_clickable(url):
+        return f'<a href="{url}">{url}</a>'
+
+    df['URL'] = df['URL'].apply(make_clickable)
+
+    # Convert pandas DataFrame to HTML
+    df = df.sort_values(by=['Company', 'Country'])
+
+    name = spark.sql("""
+                       SELECT DISTINCT(Name) FROM goldlayer_coresignal.test_salesforce
+                            WHERE Email LIKE '{}'
+                       """.format(email)).collect()[0].Name
+
+    table_html = df.to_html(index=False, escape=False)
+
+    data = ''
+    current_company = None
+    current_country = None
+
+    for index, row in df.iterrows():
+        if current_company != row['Company']:
+            if current_company is not None:
+                data += '<br>'
+            data += f"<b>{row['Company']}</b><br>"
+            current_company = row['Company']
+            if current_country == row['Country']:
+                data += '<br>'
+                data += f"<i>{row['Country']}</i><br><br>"
+        if current_country != row['Country']:
+            data += '<br>'
+            data += f"<i>{row['Country']}</i><br><br>"
+            current_country = row['Country']
+        data += f"{row['Title']} - {row['City']} - {row['URL']}<br>"
+
+    body = f"""
+                <html>
+                <body>
+                <p> Hi {name}, <br>
+
+                    <br>
+                    Happy Friday!
+                    <br>
+                    Here is the list of Jobs that have been posted this week for the companies you’re overlooking: 
+                </p>
+                <p>
+                    {data}
+                </p>
+                </body>
+                </html>
+                """
+
+    return body
