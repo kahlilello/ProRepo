@@ -43,7 +43,7 @@ def create_email_body(email):
                             j.country AS Country,
                             j.city AS City,
                             j.linkedinJobPostUrl AS URL
-                            FROM ----- AS j
+                            FROM --Job Table-- AS j
                             JOIN ----- AS c
                             ON lower(j.companyName) = lower(c.Company)
                             AND c.Email = '{}'
