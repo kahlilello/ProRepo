@@ -21,7 +21,7 @@ def create_email_body(email):
                             FROM ----- AS j
                             JOIN ----- AS c
                             ON (lower(j.companyName) = lower(c.Company)
-                            OR (levenshtein(lower(j.companyName), lower(c.Company_Name)) <= 3)  -- Fuzzy matching with Levenshtein distance
+                            OR (levenshtein(lower(j.companyName), lower(c.Company_Name)) <= 3)  -- Fuzzy matching with Levenshtein distance probabilities.
                                 --OR lower(j.companyName) LIKE lower(CONCAT('%', c.Company_Name, '%')) -- Fuzzy matching with wildcard
                                 )
                     
