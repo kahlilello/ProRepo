@@ -1,0 +1,87 @@
+WITH WorkOrders AS
+(
+	SELECT * FROM FactRAMPWorkflow
+	WHERE TransactionType = 'Work Order'
+		AND ExecutedFunction IS NOT NULL 
+		AND ExecutedFunction <> ''
+)
+, TransCnt AS
+(
+SELECT TransactionId, COUNT(TransactionID) As cnt
+	FROM WorkOrders
+	GROUP BY TransactionId
+)
+, ExecutionCnt AS
+(
+SELECT ExecutedFunction, COUNT(ExecutedFunction) AS cnt
+	FROM WorkOrders
+	GROUP BY ExecutedFunction
+)
+, RecentWorkOrders AS
+(
+SELECT * 
+	FROM WorkOrders
+	WHERE DateStart > '2024-04-01'
+)
+, CleanWO AS
+(
+SELECT TransactionID, DateStart, DateCreated, DateHandled,
+	ExecutedFunction 
+	FROM RecentWorkOrders
+)
+, DistinctWO AS
+(
+SELECT DISTINCT transactionID FROM
+	CleanWO
+)
+, Accept AS
+(
+SELECT TransactionID, MAX(DateHandled) AS AcceptDate
+	FROM CleanWO
+	WHERE ExecutedFunction = 'Accept'
+	GROUP BY TransactionID
+)
+, Approve AS
+(
+SELECT TransactionID, MAX(DateHandled) AS ApproveDate
+	FROM CleanWO
+	WHERE ExecutedFunction = 'Approve'
+	GROUP BY TransactionID
+)
+, EndWork AS
+(
+SELECT TransactionID, MAX(DateHandled) AS EndWorkDate
+	FROM CleanWO
+	WHERE ExecutedFunction = 'End Work'
+	GROUP BY TransactionID
+)
+, StartWork AS
+(
+SELECT TransactionID, MAX(DateHandled) AS StartWorkDate
+	FROM CleanWO
+	WHERE ExecutedFunction = 'Start Work'
+	GROUP BY TransactionID
+)
+, Invoice AS
+(
+SELECT TransactionID, MAX(DateHandled) AS InvoiceDate
+	FROM CleanWO
+	WHERE ExecutedFunction LIKE '%Submit Final Invoice%'
+	GROUP BY TransactionID
+)
+, Assign AS
+(
+SELECT TransactionID, MAX(DateHandled) AS AssignHandleDate, MIN(DateCreated) AS AssignCreatedDate, ExecutedFunction
+	FROM CleanWO
+	WHERE ExecutedFunction LIKE '%Assign%'
+	GROUP BY TransactionID, ExecutedFunction
+)
+ 
+SELECT wo.TransactionID
+	, AcceptDate
+	, ApproveDate
+	FROM DistinctWO AS wo
+		FULL JOIN Accept AS a
+			ON wo.TransactionID = a.TransactionID
+		FULL JOIN Approve AS app
+			ON wo.TransactionID = app.TransactionID
