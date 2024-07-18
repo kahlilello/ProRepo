@@ -79,6 +79,11 @@ SELECT TransactionID, MAX(DateHandled) AS AssignHandleDate, MIN(DateCreated) AS 
 SELECT wo.TransactionID
 	, AcceptDate
 	, ApproveDate
+	FROM DistinctWO AS wo
+		FULL JOIN Accept AS a
+			ON wo.TransactionID = a.TransactionID
+		FULL JOIN Approve AS app
+			ON wo.TransactionID = app.TransactionID
 	
  
 
