@@ -76,5 +76,7 @@ SELECT TransactionID, MAX(DateHandled) AS AssignHandleDate, MIN(DateCreated) AS 
 	WHERE ExecutedFunction LIKE '%Assign%'
 	GROUP BY TransactionID, ExecutedFunction
 )
+SELECT wo.TransactionID
+	
  
 
