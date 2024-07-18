@@ -78,6 +78,7 @@ SELECT TransactionID, MAX(DateHandled) AS AssignHandleDate, MIN(DateCreated) AS 
 )
 SELECT wo.TransactionID
 	, AcceptDate
+	, ApproveDate
 	
  
 
